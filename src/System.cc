@@ -659,6 +659,56 @@ void System::SaveKeyFrameTrajectoryTUM(const string &filename)
     f.close();
 }
 
+void System::SaveMapPoints(const string &filename)
+{
+    std::cout << "Saving Map Points to " << filename << "..." << std::endl;
+
+    vector<Map*> vpMaps = mpAtlas->GetAllMaps();
+    int numMaxKFs = 0;
+    Map* pBiggerMap;
+    std::cout << "There are " << std::to_string(vpMaps.size()) << " maps in the atlas" << std::endl;
+    for(Map* pMap :vpMaps)
+    {
+        std::cout << "  Map " << std::to_string(pMap->GetId()) << " has " << std::to_string(pMap->GetAllKeyFrames().size()) << " KFs" << std::endl;
+        if(pMap->GetAllKeyFrames().size() > numMaxKFs)
+        {
+            numMaxKFs = pMap->GetAllKeyFrames().size();
+            pBiggerMap = pMap;
+        }
+    }
+
+    const vector<MapPoint*> &vpMPs = pBiggerMap->GetAllMapPoints();
+    int num = std::accumulate(vpMPs.begin(), vpMPs.end(), 0, [](const auto& prev, const auto& p){
+        return p->isBad() ? prev : prev + 1;
+    });
+
+    std::ofstream ofs(filename);
+    // // PCD Header
+    // ofs << "# .PCD v.7 - Point Cloud Data file format\n"
+    //     << "VERSION .7\n"
+    //     << "FIELDS x y z\n"
+    //     << "SIZE 4 4 4\n"
+    //     << "TYPE F F F\n"
+    //     << "COUNT 1 1 1\n"
+    //     << "WIDTH " << num << "\n"
+    //     << "HEIGHT 1\n"
+    //     << "VIEWPOINT 0 0 0 1 0 0 0\n"
+    //     << "POINTS " << num << "\n"
+    //     << "DATA ascii\n";
+
+    for (const auto& mapPoint : vpMPs)
+    {
+        if (mapPoint->isBad())
+        {
+            continue;
+        }
+
+        Eigen::Matrix<float, 3, 1> pos = mapPoint->GetWorldPos();
+        ofs << pos.x() << " " << pos.y() << " " << pos.z() << "\n";
+    }
+
+}
+
 void System::SaveTrajectoryEuRoC(const string &filename)
 {
 

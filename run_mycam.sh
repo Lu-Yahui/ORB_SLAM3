@@ -1,0 +1,1 @@
+./Examples/Stereo/stereo_mycam ./Vocabulary/ORBvoc.txt Examples/Stereo/mycam.yaml ./data/mycam ./data/mycam/timestamp.txt
