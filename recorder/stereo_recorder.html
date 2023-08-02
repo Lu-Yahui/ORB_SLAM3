@@ -1,0 +1,126 @@
+<html>
+
+<head>
+    <title>My Stereo Cam Recorder</title>
+</head>
+
+<style>
+    img {
+        max-width: 100%;
+        max-height: 100%;
+        display: block;
+    }
+    p {
+        font-size: 2.5em;
+    }
+    button {
+        width: 12em;
+        height: 8em;
+        font-size: 0.75em;
+        border-radius: 20px;
+    }
+</style>
+
+<body onload="main()">
+    <div>
+        <p id="recording">Recording: Unknown</p>
+        <p id="session">Session: ---</p>
+        <p id="latest_timestamp">Latest Timestamp: 0</p>
+        <p id="recorded">Recorded: 0</p>
+        <p id="in_queue">In Queue: 0</p>
+    </div>
+    <div>
+        <button id="btn" onclick="submit()">Start</button>
+    </div>
+    <br>
+    <div>
+        <img id="latest_image" src="" alt="img" />
+    </div>
+</body>
+
+<script type="text/javascript">
+    var recording = false;
+    var num_of_in_queue = 0;
+
+    function submit() {
+        var xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function () {
+            // console.log(xhr.response);
+        }
+        if (recording == false && num_of_in_queue == 0)
+        {
+            xhr.open('get', 'http://localhost:5000/start', true);
+        }
+        else
+        {
+            xhr.open('get', 'http://localhost:5000/stop', true);
+        }
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+        xhr.send();
+    }
+
+    function main() {
+        setInterval(function(){
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState != 4)
+                {
+                    return;
+                }
+                res = JSON.parse(xhr.response);
+                var recording_el = document.getElementById("recording");
+                recording_el.textContent = "Recording: " + res["is_recording"];
+                recording = res["is_recording"]
+
+                var session_el = document.getElementById("session");
+                session_el.textContent = "Session: " + res["current_session"];
+                var latest_timestamp_el = document.getElementById("latest_timestamp");
+                latest_timestamp_el.textContent = "Latest Timestamp: " + res["latest_data_timestamp"];
+                var recorded_el = document.getElementById("recorded");
+                recorded_el.textContent = "Recorded: " + res["recorded"];
+                var in_queue_el = document.getElementById("in_queue");
+                in_queue_el.textContent = "In Queue: " + res["in_queue"];
+                num_of_in_queue = res["in_queue"];
+
+                var btn_el = document.getElementById("btn");
+                if (recording == true)
+                {
+                    btn_el.textContent = "Stop";
+                }
+                else
+                {
+                    if (num_of_in_queue == 0)
+                    {
+                        btn_el.textContent = "Start";
+                    }
+                    else
+                    {
+                        btn_el.textContent = "Stopping...";
+                    }
+                }
+            }
+            xhr.open('get', 'http://localhost:5000/status', true);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+            xhr.send();
+        }, 50);
+
+        setInterval(function(){
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState != 4)
+                {
+                    return;
+                }
+                res = JSON.parse(xhr.response);
+                var img_el = document.getElementById("latest_image");
+                img_el.src = "data:image/jpeg;base64,"+ res["img"];
+            }
+            xhr.open('get', 'http://localhost:5000/latest_image', true);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+            xhr.send();
+        }, 50);
+    }
+
+</script>
+
+</html>
