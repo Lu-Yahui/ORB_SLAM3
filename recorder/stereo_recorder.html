@@ -1,7 +1,9 @@
 <html>
 
 <head>
-    <title>My Stereo Cam Recorder</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stereo Camera Recorder</title>
 </head>
 
 <style>
@@ -9,54 +11,165 @@
         max-width: 100%;
         max-height: 100%;
         display: block;
-    }
-    p {
-        font-size: 2.5em;
+        margin-left: auto;
+        margin-right: auto;
     }
     button {
         width: 12em;
-        height: 8em;
+        height: 4em;
         font-size: 0.75em;
-        border-radius: 20px;
+        border-radius: 10px;
     }
+
+    #title
+    {
+        width:100%;
+        text-align: center;
+    }
+
+    #outer
+    {
+        width:100%;
+        text-align: center;
+    }
+    .inner
+    {
+        display: inline-block;
+    }
+
+    table {
+        font-family: arial, sans-serif;
+        border-collapse: collapse;
+        width: 100%;
+    }
+
+    td, th {
+        border: 1px solid #dddddd;
+        text-align: left;
+        padding: 8px;
+    }
+
+    .key {
+        width: 40%;
+    }
+
+    tr:nth-child(even) {
+        background-color: #dddddd;
+    }
+
+    h4 {
+        margin-top: 30px;
+        color:dimgray;
+    }
+
 </style>
 
 <body onload="main()">
-    <div>
-        <p id="recording">Recording: Unknown</p>
-        <p id="session">Session: ---</p>
-        <p id="latest_timestamp">Latest Timestamp: 0</p>
-        <p id="recorded">Recorded: 0</p>
-        <p id="in_queue">In Queue: 0</p>
+    <div id="title">
+        <h4>Stereo Camera Recorder</h4>
     </div>
+
     <div>
-        <button id="btn" onclick="submit()">Start</button>
+        <table>
+            <tr>
+              <td class="key">Camera Opened</td>
+              <td id="device_opened">Unknown</td>
+            </tr>
+            <tr>
+              <td class="key">Is Recording</td>
+              <td id="recording">Unknown</td>
+            </tr>
+            <tr>
+                <td class="key">Session</td>
+                <td id="session">None</td>
+            </tr>
+            <tr>
+                <td class="key">Latest Timestamp</td>
+                <td id="latest_timestamp">0</td>
+            </tr>
+            <tr>
+                <td class="key">FPS</td>
+                <td id="fps">0</td>
+            </tr>
+            <tr>
+                <td class="key">Recorded</td>
+                <td id="recorded">0</td>
+            </tr>
+            <tr>
+                <td class="key">In Queue</td>
+                <td id="in_queue">0</td>
+            </tr>
+        </table>
     </div>
-    <br>
+
+    <hr>
+
+    <!-- controls -->
+    <div id="outer">
+        <div class="inner">
+            <button id="cam_btn" type="submit" onClick="camera_control()">Open Camera</button>
+        </div>
+        <div class="inner">
+            <br>
+        </div>
+        <div class="inner">
+            <button id="rec_btn" type="submit" onClick="recording_control()" >Start</button>
+        </div>
+    </div>
+
+    <hr>
+
     <div>
-        <img id="latest_image" src="" alt="img" />
+        <img id="latest_image" src="" alt="" />
     </div>
 </body>
 
 <script type="text/javascript">
     var recording = false;
     var num_of_in_queue = 0;
+    var camera_opened = false;
+    var url = window.location.protocol + "//" + window.location.host;
 
-    function submit() {
+    function recording_control() {
         var xhr = new XMLHttpRequest();
-        xhr.onreadystatechange = function () {
-            // console.log(xhr.response);
-        }
-        if (recording == false && num_of_in_queue == 0)
+        xhr.onreadystatechange = function () {}
+        var ready_to_send = false;
+        if (recording == false && num_of_in_queue == 0 && camera_opened == true)
         {
-            xhr.open('get', 'http://localhost:5000/start', true);
+            xhr.open('get', url + '/start', true);
+            ready_to_send = true;
         }
         else
         {
-            xhr.open('get', 'http://localhost:5000/stop', true);
+            xhr.open('get', url + '/stop', true);
+            ready_to_send = true;
         }
-        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-        xhr.send();
+        if (ready_to_send == true)
+        {
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+            xhr.send();
+        }
+    }
+
+    function camera_control() {
+        var xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function () {}
+        var ready_to_send = false;
+        if (camera_opened == false)
+        {
+            xhr.open('get', url + '/open_camera/0', true);
+            ready_to_send = true;
+        }
+        else if (camera_opened == true && recording == false)
+        {
+            xhr.open('get', url + '/close_camera', true);
+            ready_to_send = true;
+        }
+        if (ready_to_send == true)
+        {
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+            xhr.send();
+        }
     }
 
     function main() {
@@ -68,41 +181,61 @@
                     return;
                 }
                 res = JSON.parse(xhr.response);
+
                 var recording_el = document.getElementById("recording");
-                recording_el.textContent = "Recording: " + res["is_recording"];
+                recording_el.textContent = res["is_recording"];
                 recording = res["is_recording"]
 
                 var session_el = document.getElementById("session");
-                session_el.textContent = "Session: " + res["current_session"];
+                session_el.textContent = res["current_session"];
+                
                 var latest_timestamp_el = document.getElementById("latest_timestamp");
-                latest_timestamp_el.textContent = "Latest Timestamp: " + res["latest_data_timestamp"];
+                latest_timestamp_el.textContent = res["latest_data_timestamp"];
+                
                 var recorded_el = document.getElementById("recorded");
-                recorded_el.textContent = "Recorded: " + res["recorded"];
+                recorded_el.textContent = res["recorded"];
+                
                 var in_queue_el = document.getElementById("in_queue");
-                in_queue_el.textContent = "In Queue: " + res["in_queue"];
+                in_queue_el.textContent = res["in_queue"];
                 num_of_in_queue = res["in_queue"];
 
-                var btn_el = document.getElementById("btn");
+                var device_opened_el = document.getElementById("device_opened");
+                device_opened_el.textContent = res["device_opened"];
+                camera_opened = res["device_opened"]
+                var cam_btn_el = document.getElementById("cam_btn");
+                if (camera_opened == true)
+                {
+                    cam_btn_el.textContent = "Close Camera";
+                }
+                else
+                {
+                    cam_btn_el.textContent = "Open Camera";
+                }
+
+                var fps_el = document.getElementById("fps");
+                fps_el.textContent = res["fps"].toFixed(1);
+
+                var rec_btn_el = document.getElementById("rec_btn");
                 if (recording == true)
                 {
-                    btn_el.textContent = "Stop";
+                    rec_btn_el.textContent = "Stop";
                 }
                 else
                 {
                     if (num_of_in_queue == 0)
                     {
-                        btn_el.textContent = "Start";
+                        rec_btn_el.textContent = "Start";
                     }
                     else
                     {
-                        btn_el.textContent = "Stopping...";
+                        rec_btn_el.textContent = "Stopping...";
                     }
                 }
             }
-            xhr.open('get', 'http://localhost:5000/status', true);
+            xhr.open('get', url + '/status', true);
             xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
             xhr.send();
-        }, 50);
+        }, 100);
 
         setInterval(function(){
             var xhr = new XMLHttpRequest();
@@ -115,10 +248,10 @@
                 var img_el = document.getElementById("latest_image");
                 img_el.src = "data:image/jpeg;base64,"+ res["img"];
             }
-            xhr.open('get', 'http://localhost:5000/latest_image', true);
+            xhr.open('get', url + '/latest_image/left', true);
             xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
             xhr.send();
-        }, 50);
+        }, 100);
     }
 
 </script>

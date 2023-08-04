@@ -8,13 +8,17 @@ import numpy as np
 
 from flask import Flask
 
+Width = 1280
+HalfWidth = int(Width / 2)
+Height = 480
+
 class StereoCamRecorder(object):
     _instance = None
 
     @staticmethod
     def get():
         if StereoCamRecorder._instance is None:
-            StereoCamRecorder._instance = StereoCamRecorder(device_id=0, base_dir="/tmp/recording")
+            StereoCamRecorder._instance = StereoCamRecorder(device_id=0, base_dir="/home/raspberry/data")
         return StereoCamRecorder._instance
 
     def __init__(self, device_id, base_dir):
@@ -24,22 +28,21 @@ class StereoCamRecorder(object):
         self.request_shutdown = False
         self.recording = False
         self.vid = None
+        self.void_lock = threading.Lock()
         self.data_queue = []
         self.data_queue_lock = threading.Lock()
         self.data_cv = threading.Condition()
         self.cap_thread = threading.Thread(target=self.capture_data)
         self.write_thread = threading.Thread(target=self.write_data)
         self.latest_image_timestamp = 0
+        self.fps = 0.0
         self.latest_image = None
         self.num_recorded = 0
         self.latest_image_lock = threading.Lock()
         self.reset()
-        self.vid = self.open_camera(self.device_id)
+        self.vid = None
         self.cap_thread.start()
         self.write_thread.start()
-
-    def __delattr__(self, __name: str) -> None:
-        self.vid.relase()
 
     def num_of_recorded(self):
         return self.num_recorded
@@ -54,6 +57,22 @@ class StereoCamRecorder(object):
         
     def reset(self):
         self.stop_record()
+
+    def is_camera_opened(self):
+        return self.vid is not None and self.vid.isOpened()
+
+    def open_camera(self, device_id):
+        self.device_id = device_id
+        with self.void_lock:
+            self._open_camera(self.device_id)
+
+    def close_camera(self):
+        with self.void_lock:
+            if self.is_camera_opened():
+                self.vid.release()
+                self.latest_image_timestamp = 0
+                self.latest_image = None
+                self.fps = 0.0
 
     def shutdown(self):
         self.stop_record()
@@ -86,11 +105,16 @@ class StereoCamRecorder(object):
         self.data_dir = None
         self.num_recorded = 0
 
-    def open_camera(self, device_id):
-        vid = cv2.VideoCapture(device_id)
-        vid.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc("M", "J", "P", "G"))
-        vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        vid.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
+    def _open_camera(self, device_id):
+        vid = None
+        try:
+            vid = cv2.VideoCapture(device_id)
+            vid.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc("M", "J", "P", "G"))
+            vid.set(cv2.CAP_PROP_FRAME_HEIGHT, Height)
+            vid.set(cv2.CAP_PROP_FRAME_WIDTH, Width)
+            self.vid = vid
+        except Exception as _:
+            pass
         return vid
     
     def create_new_folder(self, timestamp):
@@ -103,16 +127,21 @@ class StereoCamRecorder(object):
         while True:
             if self.request_shutdown:
                 break
-            if not self.vid.isOpened():
-                print("device is not opened")
+            if not self.is_camera_opened():
+                time.sleep(0.1)
                 continue
-            ret, frame = self.vid.read()
-            t = time.time()
+            ret = False
+            frame = None
+            t = 0
+            with self.void_lock:
+                ret, frame = self.vid.read()
+                t = time.time()
             if not ret:
-                print("read image failed")
                 continue
             with self.latest_image_lock:
                 self.latest_image = frame
+                if self.latest_image_timestamp != 0:
+                    self.fps = 1.0 / (t - self.latest_image_timestamp * 1E-9)
                 self.latest_image_timestamp = int(t * 1E9)
             if self.recording:
                 if self.data_dir is None:
@@ -136,8 +165,8 @@ class StereoCamRecorder(object):
                     frame, timestamp = self.data_queue.pop(0)
                     self.num_recorded += 1
             if frame is not None and timestamp is not None:
-                left = frame[:, 0:1280]
-                right = frame[:, 1280:]
+                left = frame[:, 0:HalfWidth]
+                right = frame[:, HalfWidth:]
                 cv2.imwrite(f"{self.data_dir}/cam0_{timestamp}.bmp", left)
                 cv2.imwrite(f"{self.data_dir}/cam1_{timestamp}.bmp", right)
 
@@ -167,26 +196,55 @@ def start_recording():
     StereoCamRecorder.get().start_record()
     return f"{StereoCamRecorder.get().recording}"
 
-@app.route("/latest_image")
-def latest_image():
-    img, _ = StereoCamRecorder.get().latest_data()
+@app.route("/latest_image/<image_type>")
+def latest_image(image_type):
+    '''
+    image_type: left, right, stereo
+    '''
+    frame, _ = StereoCamRecorder.get().latest_data()
     img_base64 = ""
     img_res = {"img": img_base64}
-    if img is not None:
-        img = cv2.resize(img, (int(2560 * 0.5), int(720 * 0.5)))
+    resize_ratio = 0.75
+    if frame is not None:
+        if image_type == "left":
+            img = frame[:, :HalfWidth]
+        elif image_type == "right":
+            img = frame[:, HalfWidth:]
+        elif image_type == "stereo":
+            img = frame
+        else:
+            img = frame
+        height, width, _ = img.shape
+        img = cv2.resize(img, (int(width * resize_ratio), int(height * resize_ratio)))
         _, buf = cv2.imencode(".jpg", img)
         img_base64 = base64.b64encode(buf).decode("utf-8")
         img_res = {"img": img_base64}
     return img_res
+
+@app.route("/open_camera/<device_id>")
+def open_camera(device_id):
+    print(device_id)
+    StereoCamRecorder.get().open_camera(int(device_id))
+    return f"{StereoCamRecorder.get().is_camera_opened()}"
+
+@app.route("/close_camera")
+def close_camera():
+    StereoCamRecorder.get().close_camera()
+    return f"{StereoCamRecorder.get().is_camera_opened()}"
 
 @app.route("/status")
 def latest_data():
     _, latest_data_timestamp = StereoCamRecorder.get().latest_data()
     current_session = StereoCamRecorder.get().data_dir
     if current_session is None:
-        current_session = "---"
+        current_session = "None"
     recorded = StereoCamRecorder.get().num_of_recorded()
     in_queue = StereoCamRecorder.get().num_of_in_queue()
     is_recording = StereoCamRecorder.get().recording
-    status = {"is_recording": is_recording, "current_session": current_session, "latest_data_timestamp": latest_data_timestamp, "recorded": recorded, "in_queue": in_queue}
+    device_opened = StereoCamRecorder.get().vid is not None and StereoCamRecorder.get().vid.isOpened()
+    fps = StereoCamRecorder.get().fps
+    status = {"is_recording": is_recording, "current_session": current_session.split("/")[-1], "latest_data_timestamp": latest_data_timestamp, "recorded": recorded, "in_queue": in_queue, "device_opened": device_opened, "fps": fps}
     return json.dumps(status)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0")
